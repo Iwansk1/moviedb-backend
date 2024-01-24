@@ -1,20 +1,36 @@
-import express from 'express'
-import bodyParser from 'express'
-import sqlite3 from 'sqlite3'
-import cors from 'cors'
-
+import express from 'express';
+import bodyParser from 'body-parser';
+import sqlite3 from 'sqlite3';
+import cors from 'cors';
+import multer from 'multer';
+import path from 'path';
 
 const app = express()
 app.use(express.json());
-app.use(cors())
+app.use(cors());
 
-app.use(bodyParser.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
+
+const __filename = new URL(import.meta.url).pathname;
+const __dirname = path.dirname(__filename);
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'Public/Uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage: storage });
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use('/Public/Uploads', express.static('Public/Uploads'));
+
 const port = 1337
 const db = new sqlite3.Database('./movies.db');
 
-app.get('/', (req, res) => {
- res.send('Hello World!')
-})
+
 app.get('/movies', (req, res) => {
 
  const query = 'SELECT * FROM movies';
@@ -31,35 +47,28 @@ res.json(movies);
 
 // *luisteren naar post
 
-app.post('/newmovie', (req, res) => {
-
-    let {title, director, release_year, genre, poster_path} = req.body;
-
-    //*console.log(title, director, release_year, genre);
-
-    if(!title || !director || !release_year || !genre){
-        res.sendStatus(400);
-    }else{
-        //! Checken of het bestaat aan de hand van jaar
+app.post('/newmovie', upload.single('poster'), (req, res) => {
+  let { title, director, release_year, genre } = req.body;
+  let posterPath = req.file ? `/Public/Uploads/${req.file.filename}` : null;
 
 
-        const query = `INSERT INTO movies (title, release_year, director, genre, poster_path) VALUES (?, ?, ?, ?, ?)`;
-        const values = [title, release_year, director, genre, poster_path];
-      
-        console.log(query, values);
-      
-        db.run(query, values, function (err) {
-          if (err) {
-            console.error(err);
-            res.status(500).send('Internal Server Error');
-            return;
-          }
-        res.status(201).json({ title, director, release_year, genre, });
-        }); 
-        //*console.log(query);
-    }
+  if (!title || !director || !release_year || !genre) {
+    res.sendStatus(400);
+  } else {
+    const query = `INSERT INTO movies (title, release_year, director, genre, poster_path) VALUES (?, ?, ?, ?, ?)`;
+    const values = [title, release_year, director, genre, posterPath];
+
+    db.run(query, values, function (err) {
+      if (err) {
+        console.error(err);
+        res.status(500).send('Internal Server Error ' + err.message);
+        return;
+      } 
+      res.status(201).json({ title, director, release_year, genre, poster_path: posterPath });
+    });
+  }
+  
 });
-
 
 app.listen(port, () => {
  console.log(`Server is listening at http://localhost:${port}`);
